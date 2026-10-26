@@ -4,6 +4,8 @@ Interactive simulator for the Data Link Layer flow-control protocols **Stop-and-
 
 A single C++ program implements all three protocols behind one common interface. The website shows that source code, "compiles" and runs it in the browser with line-by-line highlighting, and animates what happens on the channel.
 
+**Live demo:** https://arq-protocol-simulator.vercel.app
+
 ## Features
 
 - **C++ source viewer**: the full `arq_simulator.cpp` with syntax highlighting. During a run, the executing line and its enclosing block (loop, `if` or function) are highlighted, with loop-iteration badges.
@@ -48,6 +50,17 @@ python -m http.server 5173
 ```
 
 Then open http://localhost:5173.
+
+## Deployment
+
+The site is deployed on Vercel as a static site at https://arq-protocol-simulator.vercel.app. No build command or output directory is needed; the repository root is served as is.
+
+## Performance notes
+
+- The stage animation only redraws while a run is playing or after its state changes, so a paused or finished run uses no per-frame work.
+- Packets whose animation has finished are dropped from the render loop, so long runs stay smooth.
+- "Skip to end" applies only the final sender/receiver snapshot instead of every intermediate one.
+- In the C++ program, the event channel is swapped instead of copied each tick, and loss lookups and invalid loss entries use single set operations.
 
 ## Project structure
 

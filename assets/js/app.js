@@ -430,6 +430,7 @@
 
   function applySnapshot(snap) {
     C.last = snap;
+    P.dirty = true;
     for (let i = 0; i < C.N; i++) {
       if (C.sBoxes[i].dataset.state !== snap.sender[i]) C.sBoxes[i].dataset.state = snap.sender[i];
       if (C.rBoxes[i].dataset.state !== snap.receiver[i]) C.rBoxes[i].dataset.state = snap.receiver[i];
@@ -608,6 +609,7 @@
     ['tx', 'Transmissions', 'blue'], ['re', 'Retransmissions', 'amber'], ['del', 'Delivered', 'green'],
     ['disc', 'Discarded', 'red'], ['lost', 'Lost frame / ACK', 'red'], ['to', 'Timeouts', 'amber']
   ];
+  let metricCells = [];
   function renderMetrics() {
     const L = P.live;
     const vals = {
@@ -616,10 +618,13 @@
     const grid = $('#metrics');
     if (!grid.children.length) {
       grid.innerHTML = METRICS.map(([k, label, c]) => '<div class="metric ' + c + '" data-m="' + k + '"><span>' + label + '</span><b>0</b></div>').join('');
+      metricCells = METRICS.map(([k]) => {
+        const box = grid.querySelector('[data-m="' + k + '"]');
+        return { box, b: box.querySelector('b') };
+      });
     }
-    METRICS.forEach(([k]) => {
-      const box = grid.querySelector('[data-m="' + k + '"]');
-      const b = box.querySelector('b');
+    METRICS.forEach(([k], i) => {
+      const { box, b } = metricCells[i];
       const v = String(vals[k]);
       if (b.textContent !== v) {
         b.textContent = v;
@@ -632,7 +637,7 @@
   const P = {
     active: false, playing: false, done: false, instant: false, stepMode: false,
     steps: [], idx: 0, vt: 0, speed: 1, waitUntil: 0, typing: null, last: 0,
-    packets: [], timers: [], result: null, session: 0, maxClock: 0,
+    packets: [], timers: [], result: null, session: 0, maxClock: 0, dirty: false,
     live: { tx: 0, re: 0, del: 0, disc: 0, flost: 0, alost: 0, to: 0 }
   };
 
@@ -790,9 +795,12 @@
     if (step.anchor && !P.instant) highlightStep(step);
     if (step.out) term.write(step.out, step.kind);
     if (step.kind === 'prompt' && !P.instant) term.showCaret();
-    if (step.snap) applySnapshot(step.snap);
+    if (step.snap) {
+      if (P.instant) P.pendingSnap = step.snap;
+      else applySnapshot(step.snap);
+    }
     if (step.viz) applyViz(step.viz);
-    if (step.kind === 'log' || step.viz) renderMetrics();
+    if (!P.instant && (step.kind === 'log' || step.viz)) renderMetrics();
   }
 
   function applyViz(v) {
@@ -903,6 +911,7 @@
   }
 
   function renderDynamic() {
+    P.dirty = false;
     $('#clockVal').textContent = P.vt.toFixed(1);
     const { a, b } = laneY();
     for (const p of P.packets) {
@@ -926,6 +935,7 @@
       const x = colX(p.frame) + (p.kind === 'frame' ? -3 : 3);
       p.elm.style.transform = 'translate(' + x + 'px,' + y + 'px) translate(-50%,-50%)';
     }
+    P.packets = P.packets.filter((p) => !(p.gone && (!p.dl || p.diagDone)));
     // timers under sender frames
     const map = new Map(P.timers.map((t) => [t.frame, t]));
     for (let i = 0; i < C.sBoxes.length; i++) {
@@ -1000,6 +1010,8 @@
       applyStep(s);
     }
     P.instant = false;
+    if (P.pendingSnap) { applySnapshot(P.pendingSnap); P.pendingSnap = null; }
+    renderMetrics();
     if (lastAnchored) highlightStep(lastAnchored);
     renderDynamic();
     finishRun();
@@ -1009,7 +1021,7 @@
     const dt = Math.min(80, now - (P.last || now));
     P.last = now;
     if (P.playing && !P.compiling) advance(now, dt);
-    if (P.active) renderDynamic();
+    if (P.active && (P.playing || P.dirty)) renderDynamic();
     requestAnimationFrame(loop);
   }
 
@@ -1153,6 +1165,7 @@
       $$('#stageTabs button').forEach((x) => x.classList.toggle('active', x === b));
       $('#channelView').hidden = state.stage !== 'channel';
       $('#diagramView').hidden = state.stage !== 'diagram';
+      P.dirty = true;
     }));
     $$('.file-tab').forEach((b) => b.addEventListener('click', () => showFile(b.dataset.file)));
     $('#followToggle').addEventListener('change', (e) => { state.follow = e.target.checked; });

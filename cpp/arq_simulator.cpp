@@ -92,8 +92,7 @@ protected:
         stats.transmissions++;
         if (isRetransmission) stats.retransmissions++;
 
-        bool lost = cfg.lostFrames.count(frame) > 0;
-        if (lost) cfg.lostFrames.erase(frame);          // lost on first trip only
+        bool lost = cfg.lostFrames.erase(frame) > 0;    // lost on first trip only
 
         Event e = { clock + PROPAGATION_DELAY, FRAME_ARRIVAL, frame, seqOf(frame), lost, 0 };
         channel.push_back(e);
@@ -102,8 +101,7 @@ protected:
     }
 
     void transmitAck(int frame, int ackNo) {
-        bool lost = cfg.lostAcks.count(frame) > 0;
-        if (lost) cfg.lostAcks.erase(frame);
+        bool lost = cfg.lostAcks.erase(frame) > 0;
 
         Event e = { clock + PROPAGATION_DELAY, ACK_ARRIVAL, frame, ackNo, lost, 0 };
         channel.push_back(e);
@@ -124,11 +122,12 @@ protected:
 
     void processEvents() {
         vector<Event> due, pending;
+        pending.reserve(channel.size());
         for (size_t i = 0; i < channel.size(); i++) {
             if (channel[i].time == clock) due.push_back(channel[i]);
             else pending.push_back(channel[i]);
         }
-        channel = pending;
+        channel.swap(pending);                          // avoids copying the pending events
 
         // arrivals on the channel are handled before timers firing at the same instant
         for (size_t i = 0; i < due.size(); i++) {
@@ -463,14 +462,11 @@ set<int> readList(const string& prompt) {
 }
 
 void dropUnknown(set<int>& values, int totalFrames, const string& what) {
-    vector<int> unknown;
-    for (set<int>::iterator it = values.begin(); it != values.end(); ++it) {
-        if (*it >= totalFrames) unknown.push_back(*it);
+    set<int>::iterator first = values.lower_bound(totalFrames);   // the set is sorted
+    for (set<int>::iterator it = first; it != values.end(); ++it) {
+        cout << "Warning: " << what << " " << *it << " does not exist and is ignored\n";
     }
-    for (size_t i = 0; i < unknown.size(); i++) {
-        cout << "Warning: " << what << " " << unknown[i] << " does not exist and is ignored\n";
-        values.erase(unknown[i]);
-    }
+    values.erase(first, values.end());
 }
 
 void printError(const string& message) {
